@@ -1,0 +1,59 @@
+{
+  "ctr": {
+    "model_type": "ctr",
+    "prob": "68",
+    "modelx": {
+      "model_hyperparameter": {
+        "activation": "lrelu",
+        "dnn_hidden_units": [
+            512,
+            256,
+            128
+          ],
+        "bias_dnn_hidden_units": [
+            256,
+            128,
+            64
+          ],
+        "filter_pooling": true,
+        "self_attention": true,
+        "dual_l2_norm": false,
+        "dual_mlp": false,
+        "dual_film": false,
+        "nce_loss": false,
+        "nce_temperature": 0.07,
+        "dual_loss_w": 1,
+        "multi_sid_loss_w": 1,
+        "interest_nums": 30,
+        "union_type": "mlaf_single_gate",
+        "gate_type": "element_level",
+        "attention_l2_reg": 0.0,
+        "dnn_l2_reg": 0.0,
+        "need_dropout": false,
+        "dropout_rate": 0.0,
+        "batch_norm": true,
+        "batch_norm_epsilon": 0.001,
+        "batch_norm_decay": 0.999
+      }
+    },
+    "optimizer": {
+        "Adagrad": {
+          "scope": "Global",
+          "lr_func": "cold_start",
+          "learning_rate": 0.15,
+          "lrcs_init_lr": 0.001,
+          "lrcs_init_step": 200000,
+          "decay_step": 5000000,
+          "decay_rate": 0.95,
+          "clip_gradients": 5.0,
+          "staircase": true
+        }
+      },
+    "user_columns": "user_columns",
+    "user_profile_columns": "user_profile_columns",
+    "item_columns": "item_columns",
+    "item_query_columns": "item_query_columns",
+    "bias_columns": "user_profile_columns;context_columns",
+    "seq_column_blocks": "all_clk_seq_list:all_clk_seq_len_columns"
+  }
+}
