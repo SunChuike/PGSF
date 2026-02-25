@@ -8,10 +8,11 @@ The PGSF architecture, highlighting critical modules, is shown below. Accompanyi
 
 *   **Overall Model Structure:**
 
-[model.pdf](https://github.com/user-attachments/files/25534435/model.pdf)
+<img width="2227" height="1012" alt="model" src="https://github.com/user-attachments/assets/0a042c8c-99d8-4575-9f6c-22502e3bbf37" />
 
 *   **Annotated Code Snippet for Key Modules (model.py):**
 
+<img width="1532" height="596" alt="key module" src="https://github.com/user-attachments/assets/a08b99a5-d199-4d6a-b25a-59e496887745" />
 
 
 
