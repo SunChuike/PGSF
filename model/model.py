@@ -122,16 +122,8 @@ class CTR(Algorithm):
         self.query_sequence_layer_dict = {}
         self.layer_net_dict = {}
 
-        self.atten_collections_dnn_hidden_layer = "{}_atten_dnn_hidden_layer".format(self.model_name)
-        self.atten_collections_dnn_hidden_output = "{}_atten_dnn_hidden_output".format(self.model_name)
-
         self.collections_dnn_hidden_layer = self.model_name + "_collections_dnn_hidden_layer"
         self.collections_dnn_hidden_output = self.model_name + "_collections_dnn_hidden_output"
-
-        self.collections_mask_hidden_layer = self.model_name + "_collections_mask_hidden_layer"
-        self.collections_mask_hidden_output = self.model_name + "_collections_mask_hidden_output"
-
-        self.collections_predictions = self.model_name + "_collections_predictions"
 
         self.prada_extra_meta_config = self.config.get_prada_extra_meta_config()
         self.fg = FgParser(self.config.get_fg_config())
@@ -241,22 +233,13 @@ class CTR(Algorithm):
                     max_len = self.fg.get_seq_len_by_sequence_name(block_name)
                     sequence = self.sequence_layer_dict[block_name]
 
-                    seq_emb_dict = self.slice_feat_emb_by_column(sequence, self.feature_columns[block_name], block_name+"_")
-
-                    if block_name not in self.seq_column_len or self.seq_column_len[block_name] not in self.layer_dict:
-                        sequence_mask = tf.sequence_mask(
-                            tf.ones_like(sequence[:, 0, 0], dtype=tf.int32), 1)
-                        sequence_mask = tf.tile(sequence_mask, [1, max_len])
-                    else:
-                        sequence_length = self.layer_dict[self.seq_column_len[block_name]]
-                        sequence_mask = tf.sequence_mask(tf.reshape(sequence_length, [-1]), max_len)
+                    sequence_length = self.layer_dict[self.seq_column_len[block_name]]
+                    sequence_mask = tf.sequence_mask(tf.reshape(sequence_length, [-1]), max_len)
 
                     if self.model_conf['model_hyperparameter'].get('self_attention', True):
-                        self_v = self.extract_emb_by_feat_names(seq_emb_dict, ["all_clk_seq_item","all_clk_seq_brand","all_clk_seq_cate","all_clk_seq_seller","all_clk_seq_cat1"])
-
                         self_poly_vec = attention(queries=sequence,
                                                   keys=sequence,
-                                                  values=self_v,
+                                                  values=sequence,
                                                   num_units=None,
                                                   num_output_units=None,
                                                   activation_fn=None,
@@ -272,7 +255,7 @@ class CTR(Algorithm):
                         self.layer_dict[block_name] = self_poly_vec
 
     def pisa_net(self):
-        with tf.name_scope("user_profile_layer"):
+        with tf.name_scope("PISA_AU_NET"):
             user_profile_layer = []
             for block_name in self.user_profile_column_blocks:
                 if block_name not in self.layer_dict:
@@ -294,21 +277,9 @@ class CTR(Algorithm):
                     outputs_collections=[self.collections_dnn_hidden_output],
                     biases_initializer=None)
                 if self.model_conf['model_hyperparameter'].get('dual_mlp', False):
-                    self.user_query_au_vec = self.mlp_layer(user_au_vec_init, [256,120], True, True, "user_query_au_net")
-                if self.model_conf['model_hyperparameter'].get('dual_film', False):
+                    self.user_query_au_vec = self.mlp_layer(user_au_vec_init, [256,120], True, True, True,"user_query_au_net")
+                if self.model_conf['model_hyperparameter'].get('dual_film', True):
                     self.user_query_au_vec = self.film_layer(user_au_vec_init, 120)
-
-        with tf.name_scope("user_ta_net"):
-            u_sa_emb = self.layer_dict["all_clk_seq_list"]
-            target_Q_expanded = tf.expand_dims(self.user_query_au_vec, 1)
-            att_scores = tf.matmul(target_Q_expanded, u_sa_emb, transpose_b=True)
-            att_weights = tf.nn.softmax(att_scores, axis=-1)
-            target_attended = tf.squeeze(tf.matmul(att_weights, u_sa_emb), axis=1)
-
-            target_attended = target_attended + self.user_query_au_vec
-            target_attended = layers.layer_norm(target_attended, begin_norm_axis=-1, begin_params_axis=-1)
-
-            self.user_ta_vec = tf.identity(target_attended, name='user_ta_vec')
 
     def mism_net(self):
         self.vocab_size = 700
@@ -319,9 +290,9 @@ class CTR(Algorithm):
                                      max_partitions=self.config.get_job_config("ps_num"),
                                      min_slice_size=self.config.get_job_config("dnn_min_slice_size"))
                                  ):
-            user_sa_vec = self.layer_dict["all_clk_seq_list_sa"]
-            predicted_sid = self.mlp_layer(user_sa_vec, [512, 256], True, True, "Semantic_Routing_1")
-            self.predicted_sid = self.mlp_layer(predicted_sid, [self.vocab_size], True, True, "Semantic_Routing_2")
+            user_sa_vec = self.layer_dict["user_seq_list_sa"]
+            predicted_sid = self.mlp_layer(user_sa_vec, [512, 256], True, True, True, "Semantic_Routing_1")
+            self.predicted_sid = self.mlp_layer(predicted_sid, [self.vocab_size], True, False,True, "Semantic_Routing_2")
             self.topk_interests = self.topk_sid_lookup(self.predicted_sid, k=self.interest_nums)
 
     def user_net(self):
@@ -352,7 +323,18 @@ class CTR(Algorithm):
                             normalizer_params={"scale": True, "is_training": self.is_training})
 
     def mlaf_net(self):
-        with tf.name_scope("MLAF_TA"):
+        with tf.name_scope("MLAF_TA1"):
+            u_sa_emb = self.layer_dict["user_seq_list"]
+            target_Q_expanded = tf.expand_dims(self.user_query_au_vec, 1)
+            att_scores = tf.matmul(target_Q_expanded, u_sa_emb, transpose_b=True)
+            att_weights = tf.nn.softmax(att_scores, axis=-1)
+            target_attended = tf.squeeze(tf.matmul(att_weights, u_sa_emb), axis=1)
+
+            target_attended = target_attended + self.user_query_au_vec
+            target_attended = layers.layer_norm(target_attended, begin_norm_axis=-1, begin_params_axis=-1)
+
+            self.user_ta_vec = tf.identity(target_attended, name='user_ta_vec')
+        with tf.name_scope("MLAF_TA2"):
             query = tf.expand_dims(self.user_ta_vec, axis=1)
             key = self.topk_interests
             value = self.topk_interests
@@ -366,8 +348,11 @@ class CTR(Algorithm):
             mlaf_ta = tf.matmul(aw, value)
             mlaf_ta = tf.squeeze(mlaf_ta, axis=1)
 
+            user_query_au = self.mlp_layer(self.user_query_au_vec, [128], True, True, True, "user_au_mlp")
+            mlaf_ta = mlaf_ta + user_query_au
+
         with tf.name_scope("MLAF_FINAL_UNION"):
-            union_type = self.model_conf['model_hyperparameter'].get("union_type", "mlaf_single_gate")
+            union_type = self.model_conf['model_hyperparameter'].get("union_type", "mlaf_double_gate")
             gate_type = self.model_conf['model_hyperparameter'].get("gate_type", "element_level")
 
             user_vec_dim = self._user_net.get_shape().as_list()[-1]
@@ -759,7 +744,7 @@ class CTR(Algorithm):
                     sequence_layer_dict[block_name] = sequence_stack
         return sequence_layer_dict
 
-    def topk_sid_lookup(self, predicted_sid, k=30):
+    def topk_sid_lookup(self, predicted_sid, k=25):
         with tf.name_scope("TopKSidLookup"):
             topk_scores, topk_indices = tf.nn.top_k(
                 predicted_sid,
@@ -789,7 +774,7 @@ class CTR(Algorithm):
 
             return topk_interests
 
-    def mlp_layer(self, dnn_input, dnn_hidden_units, batch_norm=True, need_dropout=True, name_scope="default"):
+    def mlp_layer(self, dnn_input, dnn_hidden_units, batch_norm=True, need_activation = True, need_dropout=True, name_scope="default"):
         normalizer_fn = None
         normalizer_params = None
         if batch_norm:
@@ -805,7 +790,7 @@ class CTR(Algorithm):
                     dnn_input = layers.fully_connected(
                         dnn_input,
                         num_hidden_units,
-                        getActivationFunctionOp(self.model_conf['model_hyperparameter']['activation']),
+                        getActivationFunctionOp(self.model_conf['model_hyperparameter']['activation']) if need_activation else None,
                         normalizer_fn=normalizer_fn,
                         normalizer_params=normalizer_params,
                         scope=dnn_hidden_layer_scope,
@@ -834,9 +819,9 @@ class CTR(Algorithm):
 
             seed_broadcast = tf.tile(seed_vector, [tf.shape(user_attrs)[0], 1])
 
-            a_u = (1.0 + gamma) * seed_broadcast + beta
+            seed_broadcast = self.mlp_layer(seed_broadcast, [256, dim], True, True, True, name_scope="seed_mlp")
 
-            a_u = tf.nn.l2_normalize(a_u, axis=1)
+            a_u = gamma * seed_broadcast + beta
 
             return a_u
 
@@ -923,35 +908,3 @@ class CTR(Algorithm):
         tensor = tf.reshape(tensor, [-1, 1])
         tensor = tf.cast(tensor, tf.string)
         return tensor
-
-    def slice_feat_emb_by_column(self, emb, feature_columns, remove_prefix=None):
-        i = 0
-        feat_emb_dict = {}
-        length = len(emb.shape)
-        for column in sorted(set(feature_columns), key=lambda x: x.key):
-            if isinstance(column, _RealValuedColumn):
-                feat_name = column.column_name
-            elif isinstance(column, _EmbeddingColumn):
-                feat_name = column.sparse_id_column.column_name
-            else:
-                feat_name = column.source_column.column_name
-            if remove_prefix:
-                feat_name = feat_name.replace(remove_prefix, "")
-            try:
-                dim = column.dimension
-            except:
-                dim = column.embedding_dimension
-            if length == 2:
-                feat_emb_dict[feat_name] = emb[:, i:i+dim]
-            elif length == 3:
-                feat_emb_dict[feat_name] = emb[:, :, i:i+dim]
-            i += dim
-        return feat_emb_dict
-
-    def extract_emb_by_feat_names(self, emb_dict, feat_names):
-        emb_list = []
-        for feat_name in feat_names:
-            if feat_name in emb_dict:
-                emb_list.append(emb_dict[feat_name])
-        emb = tf.concat(emb_list, -1)
-        return emb

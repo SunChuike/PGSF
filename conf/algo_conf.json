@@ -4,7 +4,6 @@
     "prob": "68",
     "modelx": {
       "model_hyperparameter": {
-        "activation": "lrelu",
         "dnn_hidden_units": [
             512,
             256,
@@ -52,8 +51,6 @@
     "user_columns": "user_columns",
     "user_profile_columns": "user_profile_columns",
     "item_columns": "item_columns",
-    "item_query_columns": "item_query_columns",
-    "bias_columns": "user_profile_columns;context_columns",
-    "seq_column_blocks": "all_clk_seq_list:all_clk_seq_len_columns"
+    "item_query_columns": "item_query_columns"
   }
 }
